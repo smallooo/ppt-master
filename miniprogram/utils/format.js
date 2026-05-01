@@ -26,7 +26,7 @@ const PROJECT_STATUS = {
   created:               { text: '已创建',   cls: 'badge',      step: 1 },
   uploading:             { text: '上传中',   cls: 'badge',      step: 1 },
   normalizing:           { text: '解析中',   cls: 'badge-warn', step: 1 },
-  awaiting_confirmation: { text: '待确认',   cls: 'badge-warn', step: 2 },
+  awaiting_confirmation: { text: '可生成',   cls: 'badge-warn', step: 3 },
   ready_to_generate:     { text: '待生成',   cls: 'badge-warn', step: 3 },
   generating:            { text: '生成中',   cls: 'badge-warn', step: 3 },
   post_processing:       { text: '后处理中', cls: 'badge-warn', step: 3 },
@@ -60,9 +60,9 @@ const SOURCE_STATUS = {
 };
 
 const CONFIRMATION_STATUS = {
-  pending:  { text: '待审核', cls: 'badge-warn' },
-  approved: { text: '已通过', cls: 'badge-ok' },
-  revised:  { text: '已驳回', cls: 'badge-err' }
+  pending:  { text: '待确认', cls: 'badge-warn' },
+  approved: { text: '已确认', cls: 'badge-ok' },
+  revised:  { text: '已回退', cls: 'badge-err' }
 };
 
 const SOURCE_KIND = {
@@ -117,7 +117,7 @@ function decorateSource(s) {
 
 function decorateConfirmation(c) {
   if (!c) return c;
-  const meta = CONFIRMATION_STATUS[c.status] || { text: c.status || '待审核', cls: 'badge' };
+  const meta = CONFIRMATION_STATUS[c.status] || { text: c.status || '待确认', cls: 'badge' };
   return Object.assign({}, c, {
     _statusText: meta.text,
     _statusCls: meta.cls,

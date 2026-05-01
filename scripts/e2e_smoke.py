@@ -96,27 +96,13 @@ def main() -> None:
     assert all(s["source_file_id"] != tmp_id for s in body["data"])
     print("upload + list + delete source ok")
 
-    # 3a. admin route blocked without token
-    r = c.post(f"/api/v1/admin/projects/{pid}/confirmation/approve",
-               json={"approved_by": "x"})
-    assert r.status_code in (401, 503), r.status_code
-
-    # 3b. finalize then user can fetch confirmation
+    # 3a. finalize then user can fetch confirmation
     _ok(c.post(f"/api/v1/mini/projects/{pid}/sources/finalize", headers=H))
     body = _ok(c.get(f"/api/v1/mini/projects/{pid}/confirmation", headers=H))
-    assert body["data"]["status"] == "pending"
-    print("user-side confirmation -> pending")
+    assert body["data"]["status"] == "approved"
+    print("user-side confirmation -> approved")
 
-    # 3c. admin reject -> revised; then approve
-    _ok(c.post(f"/api/v1/admin/projects/{pid}/confirmation/reject",
-               headers=ADMIN, json={"reason": "need a cover slide"}))
-    body = _ok(c.get(f"/api/v1/mini/projects/{pid}/confirmation", headers=H))
-    assert body["data"]["status"] == "revised"
-    _ok(c.post(f"/api/v1/admin/projects/{pid}/confirmation/approve",
-               headers=ADMIN, json={"approved_by": "auth_e2e"}))
-    print("admin reject + approve ok")
-
-    # 3d. admin lists
+    # 3b. admin lists still available for operations visibility
     body = _ok(c.get("/api/v1/admin/projects", headers=ADMIN))
     assert any(p["project_id"] == pid for p in body["data"])
     body = _ok(c.get("/api/v1/admin/users", headers=ADMIN))

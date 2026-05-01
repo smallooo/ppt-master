@@ -1,6 +1,6 @@
 # PPT Master 微信小程序
 
-PPT Master 服务端的官方小程序客户端，覆盖：登录 → 选模板新建项目 → 上传素材（文件 / URL）→ 等待确认 → 一键生成 → 实时进度 → 下载 PPTX。
+PPT Master 服务端的官方小程序客户端，覆盖：登录 → 选模板新建项目 → 上传素材（文件 / URL）→ 自动确认规格 → 一键生成 → 实时进度 → 下载 PPTX。
 
 ## 目录结构
 
@@ -33,12 +33,12 @@ miniprogram/
 | detail | 上传文件 / URL | `POST /sources` 与 `POST /sources/url` |
 | detail | 列出 / 删除来源 | `GET /sources`、`DELETE /sources/{id}` |
 | detail | 完成上传 | `POST /sources/finalize` |
-| detail | 用户端确认 | `GET /confirmation` |
+| detail | 查看规格确认 | `GET /confirmation` |
 | detail | 生成 / 取消 / 进度 / 事件 | `/jobs/generate`、`/jobs/{id}/cancel`、`/jobs/latest`、`/jobs/{id}/events` |
 | detail | 下载产物 | `/download/pptx`、`/download/{artifact_id}`、`/preview` |
 | detail | 修改 / 删除项目 | `PATCH` / `DELETE /projects/{id}` |
 
-> 八项确认的 approve / reject 由运营在管理后台用 `X-Admin-Token` 完成，小程序只展示状态。
+> 规格确认现在由系统在 `finalize` 后自动完成，小程序只展示结果状态与规格内容。
 
 ## 启动步骤
 
@@ -58,11 +58,11 @@ miniprogram/
    - 服务端 `.env` 里设置 `PPT_SERVICE_CORS_ALLOW_ORIGINS=*` 或精确写小程序对应的开发域名。
 
 5. **典型生产链路**
-   - 用户在小程序新建项目 → 上传 → finalize → 等待确认（由运营在管理后台 approve）→ 用户回到详情页点「开始生成」→ 详情页 2 秒轮询 `/jobs/latest` 与 `/jobs/{id}/events` 直到 succeeded → 下载 PPTX。
+   - 用户在小程序新建项目 → 上传 → finalize → 系统自动确认规格 → 用户在详情页点「开始生成」→ 详情页 2 秒轮询 `/jobs/latest` 与 `/jobs/{id}/events` 直到 succeeded → 下载 PPTX。
 
 ## 已知限制 / 后续可加
 
 - `wx.openDocument` 在部分客户端对 PPTX 支持有限；可以先 `wx.saveFileToDisk` 后让用户导出。
 - 没有内置 SSE，进度采用 2s 轮询，足够生产用；要更顺滑可改为 WebSocket。
 - 没有写小程序原生分享卡片样式，需要 `onShareAppMessage` 时再补。
-- 管理端（admin approve / reject）目前默认只在后端 + curl 用，没有做小程序后台。如需，可在 me 页加入 `X-Admin-Token` 输入并切换"运营模式"。
+- 管理端接口仍保留给运维排障使用，但默认业务链路不再依赖人工 approve / reject。

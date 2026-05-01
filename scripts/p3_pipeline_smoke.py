@@ -95,10 +95,6 @@ def main() -> None:
            data={"source_kind": "markdown", "role": "primary_source"})
     c.post(f"/api/v1/mini/projects/{pid}/sources/finalize", headers=H)
 
-    admin = {"X-Admin-Token": os.environ.get("ADMIN_TOKEN", "")}
-    c.post(f"/api/v1/admin/projects/{pid}/confirmation/approve",
-           headers=admin, json={"approved_by": "p3_smoke"})
-
     # Generate
     c.post(f"/api/v1/mini/projects/{pid}/jobs/generate", headers=H)
 

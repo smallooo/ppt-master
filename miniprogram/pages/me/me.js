@@ -9,8 +9,6 @@ Page({
     quota: null,
     quotaText: { storage: '-', project: '-' },
     quotaWarn: '',         // 配额提醒
-    adminToken: '',
-    adminMode: false,
     online: true,
     loading: false
   },
@@ -18,8 +16,6 @@ Page({
   onShow() {
     const app = getApp();
     this.setData({
-      adminMode: !!app.globalData.adminToken,
-      adminToken: app.globalData.adminToken || '',
       online: app.globalData.online
     });
     if (!auth.isLoggedIn()) {
@@ -81,16 +77,6 @@ Page({
       data: this.data.user.openid,
       success() { wx.showToast({ title: 'openid 已复制', icon: 'success' }); }
     });
-  },
-
-  onAdminTokenInput(e) { this.setData({ adminToken: e.detail.value }); },
-
-  onSaveAdminToken() {
-    const token = this.data.adminToken.trim();
-    const app = getApp();
-    app.globalData.adminToken = token || null;
-    this.setData({ adminMode: !!token });
-    wx.showToast({ title: token ? '运营模式已开启' : '运营模式已关闭', icon: 'success' });
   },
 
   onPullDownRefresh() {

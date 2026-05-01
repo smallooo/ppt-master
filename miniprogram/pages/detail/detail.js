@@ -26,10 +26,7 @@ Page({
     online: true,
     // 派生：主操作按钮
     primaryAction: null,   // { key, label, danger?, disabled? }
-    // 管理端
-    adminMode: false,
-    adminApproveBy: '',
-    adminRejectReason: ''
+    adminMode: false
   },
 
   onLoad(opts) {
@@ -61,7 +58,7 @@ Page({
     }
     if (s === 'normalizing') return { key: 'wait', label: '解析中…', disabled: true };
     if (s === 'awaiting_confirmation') {
-      return { key: 'wait_confirm', label: '等待审核', disabled: true };
+      return { key: 'generate', label: '🚀 开始生成 PPT' };
     }
     if (s === 'ready_to_generate') {
       return { key: 'generate', label: '🚀 开始生成 PPT' };
@@ -386,33 +383,6 @@ Page({
   },
 
   // ===== 管理端 =====
-  onAdminApproveByInput(e) { this.setData({ adminApproveBy: e.detail.value }); },
-  onAdminRejectReasonInput(e) { this.setData({ adminRejectReason: e.detail.value }); },
-
-  async onAdminApprove() {
-    const by = this.data.adminApproveBy.trim() || 'admin';
-    try {
-      await api.adminApprove(this.data.pid, { approved_by: by });
-      wx.showToast({ title: '已通过', icon: 'success' });
-      this.refreshAll();
-    } catch (e) {
-      wx.showToast({ title: e.message || '审核失败', icon: 'none' });
-    }
-  },
-
-  async onAdminReject() {
-    const reason = this.data.adminRejectReason.trim();
-    if (!reason) return wx.showToast({ title: '请填写驳回原因', icon: 'none' });
-    try {
-      await api.adminReject(this.data.pid, { reason: reason });
-      wx.showToast({ title: '已驳回', icon: 'success' });
-      this.setData({ adminRejectReason: '' });
-      this.refreshAll();
-    } catch (e) {
-      wx.showToast({ title: e.message || '驳回失败', icon: 'none' });
-    }
-  },
-
   onPullDownRefresh() {
     this.refreshAll().finally(() => wx.stopPullDownRefresh());
   }

@@ -35,21 +35,6 @@
     </view>
 
     <view class="card">
-      <view class="section-title">运营模式（管理员）</view>
-      <view class="subtitle" style="margin-top: 8rpx;">
-        填写 X-Admin-Token 后可在项目详情页审核八项确认
-      </view>
-      <input class="input" password placeholder="填写 admin token"
-             value="{{adminToken}}" bindinput="onAdminTokenInput" />
-      <view class="btn-secondary" bindtap="onSaveAdminToken">
-        {{adminMode ? '更新 token' : '开启运营模式'}}
-      </view>
-      <view class="badge {{adminMode ? 'badge-ok' : ''}}" style="margin-top: 16rpx;">
-        当前：{{adminMode ? '已开启' : '未开启'}}
-      </view>
-    </view>
-
-    <view class="card">
       <view class="section-title">账号</view>
       <view class="btn-danger" bindtap="onLogoutTap">退出登录</view>
     </view>

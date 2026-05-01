@@ -69,20 +69,20 @@
     </block>
   </view>
 
-  <!-- ===== ② 八项确认 ===== -->
+  <!-- ===== ② 规格确认 ===== -->
   <view class="card" wx:if="{{confirmation}}">
     <view class="row">
-      <view class="section-title">② 八项确认</view>
+      <view class="section-title">② 规格确认</view>
       <view class="{{confirmation._statusCls}}">{{confirmation._statusText}}</view>
     </view>
     <view class="subtitle" style="margin-top: 12rpx;" wx:if="{{confirmation.revision_note}}">
       📝 备注：{{confirmation.revision_note}}
     </view>
     <view class="subtitle" wx:if="{{confirmation.approved_by}}">
-      👤 审核人：{{confirmation.approved_by}} · {{confirmation._approvedText}}
+      👤 确认方式：{{confirmation.approved_by}} · {{confirmation._approvedText}}
     </view>
     <view class="subtitle" wx:if="{{confirmation.status === 'pending'}}">
-      已提交，等待管理员审核
+      规格已生成，系统将自动进入生成阶段
     </view>
 
     <!-- 结构化展示 spec -->
@@ -99,17 +99,6 @@
       <view class="code-block" wx:if="{{showSpec}}">{{confirmationSpecText}}</view>
     </block>
 
-    <!-- 管理端：审核按钮 -->
-    <block wx:if="{{adminMode && confirmation.status !== 'approved'}}">
-      <view class="divider"></view>
-      <view class="label">运营审核</view>
-      <input class="input" placeholder="审核人姓名（默认 admin）"
-             value="{{adminApproveBy}}" bindinput="onAdminApproveByInput" />
-      <view class="btn" bindtap="onAdminApprove">通过</view>
-      <input class="input" placeholder="驳回原因"
-             value="{{adminRejectReason}}" bindinput="onAdminRejectReasonInput" />
-      <view class="btn-danger" bindtap="onAdminReject">驳回</view>
-    </block>
   </view>
 
   <!-- ===== ③ 生成进度 ===== -->

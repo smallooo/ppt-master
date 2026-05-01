@@ -324,11 +324,33 @@ class WorkspaceManager:
         self._write_source_records(project_root, normalized_sources)
         self._write_artifact_records(project_root, artifacts)
 
+        approved_spec = {
+            "project_name": record.project_name,
+            "canvas_format": record.canvas_format,
+            "page_range": {
+                "min": record.requested_page_min,
+                "max": record.requested_page_max,
+            },
+            "source_summary": [
+                {
+                    "source_file_id": source.source_file_id,
+                    "original_name": source.original_name,
+                    "source_kind": source.source_kind,
+                    "role": source.role,
+                    "normalized_markdown_path": source.normalized_markdown_path,
+                }
+                for source in normalized_sources
+            ],
+            "approved": True,
+            "approved_by": "system",
+            "approval_mode": "auto",
+        }
+
         updated = ProjectRecord(
             **{
                 **asdict(record),
-                "status": ProjectStatus.AWAITING_CONFIRMATION.value,
-                "status_text": "Sources normalized. Awaiting confirmation.",
+                "status": ProjectStatus.READY_TO_GENERATE.value,
+                "status_text": "Sources normalized. Ready to start generation.",
                 "updated_at": now.isoformat(),
             }
         )
@@ -337,28 +359,11 @@ class WorkspaceManager:
             project_root,
             ConfirmationRecord(
                 project_id=project_id,
-                status=ConfirmationStatus.PENDING.value,
-                suggested_spec={
-                    "project_name": record.project_name,
-                    "canvas_format": record.canvas_format,
-                    "page_range": {
-                        "min": record.requested_page_min,
-                        "max": record.requested_page_max,
-                    },
-                    "source_summary": [
-                        {
-                            "source_file_id": source.source_file_id,
-                            "original_name": source.original_name,
-                            "source_kind": source.source_kind,
-                            "role": source.role,
-                            "normalized_markdown_path": source.normalized_markdown_path,
-                        }
-                        for source in normalized_sources
-                    ],
-                },
-                approved_spec=None,
-                approved_by=None,
-                approved_at=None,
+                status=ConfirmationStatus.APPROVED.value,
+                suggested_spec=approved_spec,
+                approved_spec=approved_spec,
+                approved_by="system",
+                approved_at=now.isoformat(),
                 revision_note=None,
                 created_at=now.isoformat(),
                 updated_at=now.isoformat(),
@@ -366,7 +371,7 @@ class WorkspaceManager:
         )
         return FinalizeSourcesResponse(
             project_id=project_id,
-            status=ProjectStatus.AWAITING_CONFIRMATION,
+            status=ProjectStatus.READY_TO_GENERATE,
             status_text=updated.status_text,
             normalized_source_count=len(normalized_sources),
         )
@@ -425,7 +430,12 @@ class WorkspaceManager:
         now = datetime.now(timezone.utc)
         project_root = self.settings.projects_root / project_id
         project_record = self._read_project_record(project_root)
-        if ProjectStatus(project_record.status) is not ProjectStatus.READY_TO_GENERATE:
+        project_status = ProjectStatus(project_record.status)
+        if project_status is ProjectStatus.AWAITING_CONFIRMATION:
+            project_record = self._auto_approve_confirmation(project_root, project_record, now)
+            project_status = ProjectStatus(project_record.status)
+
+        if project_status is not ProjectStatus.READY_TO_GENERATE:
             raise ValueError("Project is not ready to generate")
 
         existing_job = self._try_read_latest_job(project_root)
@@ -1126,12 +1136,49 @@ class WorkspaceManager:
         if status is ProjectStatus.UPLOADING:
             return [NextAction.UPLOAD_SOURCE, NextAction.FINALIZE_UPLOADS]
         if status is ProjectStatus.AWAITING_CONFIRMATION:
-            return [NextAction.AWAIT_CONFIRMATION]
+            return [NextAction.START_GENERATION]
         if status is ProjectStatus.READY_TO_GENERATE:
             return [NextAction.START_GENERATION]
         if status is ProjectStatus.COMPLETED:
             return [NextAction.DOWNLOAD_PPTX]
         return []
+
+    def _auto_approve_confirmation(
+        self,
+        project_root: Path,
+        project_record: ProjectRecord,
+        now: datetime,
+    ) -> ProjectRecord:
+        confirmation = self._read_confirmation_record(project_root)
+        approved_spec = confirmation.approved_spec or {
+            **confirmation.suggested_spec,
+            "approved": True,
+            "approved_by": confirmation.approved_by or "system",
+            "approval_mode": "auto",
+        }
+        updated_confirmation = ConfirmationRecord(
+            project_id=confirmation.project_id,
+            status=ConfirmationStatus.APPROVED.value,
+            suggested_spec=confirmation.suggested_spec,
+            approved_spec=approved_spec,
+            approved_by=confirmation.approved_by or "system",
+            approved_at=confirmation.approved_at or now.isoformat(),
+            revision_note=confirmation.revision_note,
+            created_at=confirmation.created_at,
+            updated_at=now.isoformat(),
+        )
+        self._write_confirmation_record(project_root, updated_confirmation)
+
+        updated_project = ProjectRecord(
+            **{
+                **asdict(project_record),
+                "status": ProjectStatus.READY_TO_GENERATE.value,
+                "status_text": "Sources normalized. Ready to start generation.",
+                "updated_at": now.isoformat(),
+            }
+        )
+        self._write_project_record(project_root, updated_project)
+        return updated_project
 
     # ------------------------------------------------------------------
     # Extended endpoints (additions for the WeChat mini-program)
