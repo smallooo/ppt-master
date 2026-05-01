@@ -62,6 +62,8 @@ AI presentation tools roughly fall into four categories. PPT Master only does th
 
 **[See live examples →](https://hugohe3.github.io/ppt-master/)** · [`examples/`](./examples/) — 22 projects, 309 pages · **[Why PPT Master?](./docs/why-ppt-master.md)**
 
+> **Service backend (for mini-program / front-end clients)** — this repository now also ships an HTTP service layer at [`service/`](./service/) that wraps the same pipeline behind a multi-tenant REST API. See [`service/README.md`](./service/README.md) and the [`Service backend phases`](#service-backend-phases) section below.
+
 ## Gallery
 
 <table>
@@ -277,6 +279,39 @@ Looking to collaborate, integrate PPT Master into your workflow, or just have qu
    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=hugohe3/ppt-master&type=Date" />
  </picture>
 </a>
+
+---
+
+## Service backend phases
+
+The repository ships an HTTP service layer at [`service/`](./service/) that turns the same pipeline into a multi-tenant backend (designed for WeChat mini-programs and other front-end clients). It runs side-by-side with the CLI/skill workflow above.
+
+| Phase | Status | Scope |
+|---|---|---|
+| **P0 — Deployment skeleton** | ✅ shipped | `.env` config, `python -m service` entry, Dockerfile, docker-compose (with PostgreSQL + Nginx), Nginx reverse-proxy sample |
+| **P1 — PostgreSQL persistence** | 🚧 in progress | SQLAlchemy 2.0 + Alembic; replaces manifest files for projects/jobs/artifacts |
+| **P2 — WeChat auth** | ⏳ planned | `code2session` → JWT session token; per-user project isolation on `/api/v1/mini/*` |
+| **P3 — Real generation pipeline** | ⏳ planned | Worker drives Strategist + Executor via OpenAI, then `finalize_svg` + `svg_to_pptx`; replaces fallback PPTX |
+| **P4 — Hardening** | ⏳ planned | upload validation, project locks, retention, rate limiting, structured logging |
+
+Quick start (local):
+
+```bash
+cp .env.example .env        # fill in OPENAI_API_KEY / WECHAT_* / DATABASE_URL
+pip install -r requirements.txt
+python -m service           # http://127.0.0.1:8000/health
+```
+
+Quick start (docker-compose):
+
+```bash
+cp .env.example .env
+docker compose up --build
+# API:        http://127.0.0.1:8000
+# Nginx edge: http://127.0.0.1:8080
+```
+
+Endpoint reference and architecture notes live in [`service/README.md`](./service/README.md).
 
 ---
 

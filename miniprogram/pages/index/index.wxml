@@ -1,0 +1,77 @@
+<!--pages/index/index.wxml-->
+<view class="container">
+
+  <view wx:if="{{!online}}" class="banner banner-warn">⚠️ 当前无网络，部分功能不可用</view>
+
+  <!-- 未登录态 -->
+  <block wx:if="{{!loggedIn}}">
+    <view class="hero" style="margin-top: 40rpx;">
+      <view class="hero-title">PPT Master</view>
+      <view class="hero-sub">把文档变成可编辑的高级 PPT，AI 接管设计与排版</view>
+    </view>
+    <view class="card" style="text-align: center;">
+      <view class="empty-emoji">✨</view>
+      <view class="title">开始你的第一份汇报</view>
+      <view class="subtitle" style="margin-top: 12rpx;">登录后即可创建项目，全程跟踪 AI 生成进度</view>
+      <view class="btn" bindtap="onLoginTap">微信一键登录</view>
+    </view>
+  </block>
+
+  <!-- 已登录态 -->
+  <block wx:else>
+    <view class="hero">
+      <view class="row">
+        <view class="flex-1">
+          <view class="hero-title">你好，{{user.nickname || '创作者'}} 👋</view>
+          <view class="hero-sub">已有 {{counts.all}} 个项目 · 进行中 {{counts.active}}</view>
+        </view>
+        <view class="avatar">
+          <image wx:if="{{user.avatar_url}}" src="{{user.avatar_url}}" mode="aspectFill" />
+          <text wx:else>👤</text>
+        </view>
+      </view>
+    </view>
+
+    <view class="tab-pill">
+      <view
+        wx:for="{{tabs}}" wx:key="key"
+        class="tab-pill-item {{tabKey === item.key ? 'active' : ''}}"
+        data-key="{{item.key}}" bindtap="onTabChange"
+      >{{item.label}} {{counts[item.key] ? '· ' + counts[item.key] : ''}}</view>
+    </view>
+
+    <!-- skeleton 占位 -->
+    <block wx:if="{{loading && projects.length === 0}}">
+      <view wx:for="{{[1,2,3]}}" wx:key="*this" class="card">
+        <view class="skeleton skeleton-line" style="width: 60%;"></view>
+        <view class="skeleton skeleton-line" style="width: 40%;"></view>
+      </view>
+    </block>
+    <block wx:elif="{{filtered.length === 0}}">
+      <view class="empty">
+        <text class="empty-emoji">📭</text>
+        {{tabKey === 'all' ? '还没有项目，点右下角按钮新建一个' : '该筛选下没有项目'}}
+      </view>
+    </block>
+
+    <view
+      wx:for="{{filtered}}" wx:key="project_id"
+      class="card tap-area" data-pid="{{item.project_id}}" bindtap="onProjectTap"
+      hover-class="card" hover-stay-time="100"
+    >
+      <view class="row">
+        <view class="title flex-1 text-ellipsis">{{item.project_name}}</view>
+        <view class="{{item._statusCls}}">{{item._statusText}}</view>
+      </view>
+      <view class="subtitle" style="margin-top: 12rpx;">
+        {{item.canvas_format}} · {{item._updatedText}}
+      </view>
+      <view wx:if="{{item.status_text}}" class="subtitle text-ellipsis" style="margin-top: 6rpx;">
+        {{item.status_text}}
+      </view>
+    </view>
+
+    <view class="fab" bindtap="onCreateTap">+</view>
+  </block>
+
+</view>

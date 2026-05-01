@@ -14,6 +14,7 @@ Usage:
     colors = Config.get_color_scheme('consulting')
 """
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 import json
@@ -36,6 +37,35 @@ WORKFLOWS_DIR = PROJECT_ROOT / 'workflows'
 REPO_ROOT = PROJECT_ROOT.parent.parent
 EXAMPLES_DIR = REPO_ROOT / 'examples'
 PROJECTS_DIR = REPO_ROOT / 'projects'
+
+
+@dataclass(frozen=True)
+class RuntimePaths:
+    """Runtime-resolved paths for local tools or service wrappers."""
+
+    project_root: Path
+    scripts_dir: Path
+    references_dir: Path
+    templates_dir: Path
+    workflows_dir: Path
+    repo_root: Path
+    examples_dir: Path
+    projects_dir: Path
+
+
+def get_runtime_paths(projects_dir: str | Path | None = None) -> RuntimePaths:
+    """Return runtime paths while allowing service wrappers to override projects dir."""
+    resolved_projects_dir = Path(projects_dir) if projects_dir else PROJECTS_DIR
+    return RuntimePaths(
+        project_root=PROJECT_ROOT,
+        scripts_dir=SCRIPTS_DIR,
+        references_dir=REFERENCES_DIR,
+        templates_dir=TEMPLATES_DIR,
+        workflows_dir=WORKFLOWS_DIR,
+        repo_root=REPO_ROOT,
+        examples_dir=EXAMPLES_DIR,
+        projects_dir=resolved_projects_dir,
+    )
 
 # Template subdirectories
 CHART_TEMPLATES_DIR = TEMPLATES_DIR / 'charts'

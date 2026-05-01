@@ -1,0 +1,63 @@
+<view class="container">
+  <view class="hero">
+    <view class="hero-title">新建项目</view>
+    <view class="hero-sub">三步：选模板 → 填基本信息 → 上传素材</view>
+  </view>
+
+  <view class="card">
+    <view class="section-title">画布模板</view>
+    <view class="subtitle" style="margin-top: 8rpx;">不同比例适用于不同场景</view>
+
+    <block wx:if="{{loadingTpl}}">
+      <view wx:for="{{[1,2,3]}}" wx:key="*this" class="skeleton skeleton-block"></view>
+    </block>
+
+    <view wx:if="{{fallbackUsed}}" class="banner banner-warn" style="margin-top: 12rpx;">
+      ⚠️ 后端暂不可用，已展示离线模板（提交时仍需后端）
+    </view>
+
+    <view
+      wx:for="{{templates}}" wx:key="canvas_format"
+      class="card card-tight card-selectable {{selectedFmt === item.canvas_format ? 'selected' : ''}}"
+      style="margin-top: 16rpx;"
+      data-fmt="{{item.canvas_format}}" bindtap="onSelectTpl"
+    >
+      <view class="row">
+        <view class="flex-1">
+          <view style="font-size: 30rpx; font-weight: 600;">{{item.label}}</view>
+          <view class="subtitle">{{item.aspect_ratio}} · {{item.use_case}}</view>
+        </view>
+        <view wx:if="{{selectedFmt === item.canvas_format}}" class="badge badge-info">已选</view>
+      </view>
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="section-title">基本信息</view>
+
+    <view class="label">项目名称</view>
+    <input class="input" placeholder="例如：2026 Q1 战略汇报"
+           value="{{projectName}}" bindinput="onNameInput" maxlength="60" />
+
+    <view class="row" style="margin-top: 8rpx;">
+      <view class="flex-1" style="margin-right: 16rpx;">
+        <view class="label">最少页数</view>
+        <input class="input" type="number" value="{{pageMin}}" bindinput="onMinInput" />
+      </view>
+      <view class="flex-1">
+        <view class="label">最多页数</view>
+        <input class="input" type="number" value="{{pageMax}}" bindinput="onMaxInput" />
+      </view>
+    </view>
+
+    <view class="label">主题倾向（可选）</view>
+    <input class="input" placeholder="如：商业咨询风 / 极简科技风"
+           value="{{sourceHint}}" bindinput="onHintInput" maxlength="32" />
+  </view>
+
+  <view class="action-bar">
+    <view class="btn" bindtap="onSubmit" disabled="{{submitting}}">
+      {{submitting ? '创建中…' : '下一步：上传素材'}}
+    </view>
+  </view>
+</view>

@@ -1,0 +1,207 @@
+<!--pages/detail/detail.wxml-->
+<view class="container" wx:if="{{project}}">
+
+  <view wx:if="{{!online}}" class="banner banner-warn">⚠️ 当前无网络</view>
+
+  <!-- ===== Hero header with stepper ===== -->
+  <view class="hero">
+    <view class="row">
+      <view class="flex-1">
+        <view class="hero-title text-ellipsis">{{project.project_name}}</view>
+        <view class="hero-sub">{{project.canvas_format}} · 创建于 {{project._createdText}}</view>
+      </view>
+      <view class="badge" style="background: rgba(255,255,255,0.25); color: #fff;">
+        {{project._statusText}}
+      </view>
+    </view>
+
+    <view class="stepper">
+      <view class="stepper-dot {{project._step >= 1 ? 'done' : ''}}">1</view>
+      <view class="stepper-bar {{project._step >= 2 ? 'done' : ''}}"></view>
+      <view class="stepper-dot {{project._step >= 2 ? (project._step > 2 ? 'done' : 'active') : ''}}">2</view>
+      <view class="stepper-bar {{project._step >= 3 ? 'done' : ''}}"></view>
+      <view class="stepper-dot {{project._step >= 3 ? (project._step > 3 ? 'done' : 'active') : ''}}">3</view>
+      <view class="stepper-bar {{project._step >= 4 ? 'done' : ''}}"></view>
+      <view class="stepper-dot {{project._step >= 4 ? 'done' : ''}}">4</view>
+    </view>
+    <view wx:if="{{project.status_text}}" class="hero-sub" style="margin-top: 12rpx;">
+      {{project.status_text}}
+    </view>
+  </view>
+
+  <!-- ===== ① 素材 ===== -->
+  <view class="card">
+    <view class="row">
+      <view class="section-title">① 素材 ({{sources.length}})</view>
+    </view>
+
+    <block wx:if="{{sources.length === 0}}">
+      <view class="empty" style="padding: 40rpx 0;">
+        <text class="empty-emoji">📄</text>
+        还没有素材
+      </view>
+    </block>
+
+    <view wx:for="{{sources}}" wx:key="source_file_id" class="list-item">
+      <view class="list-icon">{{item._kindEmoji}}</view>
+      <view class="flex-1">
+        <view class="text-ellipsis">{{item.original_name}}</view>
+        <view class="subtitle">{{item._kindLabel}} · {{item._sizeText}}</view>
+      </view>
+      <view class="{{item._statusCls}}" style="margin-right: 12rpx;">{{item._statusText}}</view>
+      <view
+        wx:if="{{project.status === 'created' || project.status === 'uploading'}}"
+        class="btn-ghost" data-sid="{{item.source_file_id}}" bindtap="onDeleteSource"
+      >删除</view>
+    </view>
+
+    <block wx:if="{{project.status === 'created' || project.status === 'uploading'}}">
+      <view class="dropzone" bindtap="onPickFile">
+        <text class="dropzone-emoji">⬆️</text>
+        点此选择本地文件（PDF / DOCX / PPTX / Markdown 等）
+      </view>
+      <view class="row" style="margin-top: 16rpx;">
+        <input class="input flex-1" style="margin-top: 0;"
+          placeholder="或粘贴 URL 链接"
+          value="{{urlInput}}" bindinput="onUrlInput" />
+        <view class="btn-secondary" style="width: 160rpx; margin-top: 0; margin-left: 16rpx;" bindtap="onAddUrl">添加 URL</view>
+      </view>
+    </block>
+  </view>
+
+  <!-- ===== ② 八项确认 ===== -->
+  <view class="card" wx:if="{{confirmation}}">
+    <view class="row">
+      <view class="section-title">② 八项确认</view>
+      <view class="{{confirmation._statusCls}}">{{confirmation._statusText}}</view>
+    </view>
+    <view class="subtitle" style="margin-top: 12rpx;" wx:if="{{confirmation.revision_note}}">
+      📝 备注：{{confirmation.revision_note}}
+    </view>
+    <view class="subtitle" wx:if="{{confirmation.approved_by}}">
+      👤 审核人：{{confirmation.approved_by}} · {{confirmation._approvedText}}
+    </view>
+    <view class="subtitle" wx:if="{{confirmation.status === 'pending'}}">
+      已提交，等待管理员审核
+    </view>
+
+    <!-- 结构化展示 spec -->
+    <block wx:if="{{specEntries.length > 0}}">
+      <view class="divider"></view>
+      <view class="label" style="margin: 0 0 4rpx;">建议规格</view>
+      <view wx:for="{{specEntries}}" wx:key="key" class="kv-row">
+        <view class="kv-key">{{item.label}}</view>
+        <view class="kv-val">{{item.value}}</view>
+      </view>
+      <view class="btn-ghost" style="margin-top: 12rpx;" bindtap="onToggleSpec">
+        {{showSpec ? '收起原始 JSON' : '查看原始 JSON'}}
+      </view>
+      <view class="code-block" wx:if="{{showSpec}}">{{confirmationSpecText}}</view>
+    </block>
+
+    <!-- 管理端：审核按钮 -->
+    <block wx:if="{{adminMode && confirmation.status !== 'approved'}}">
+      <view class="divider"></view>
+      <view class="label">运营审核</view>
+      <input class="input" placeholder="审核人姓名（默认 admin）"
+             value="{{adminApproveBy}}" bindinput="onAdminApproveByInput" />
+      <view class="btn" bindtap="onAdminApprove">通过</view>
+      <input class="input" placeholder="驳回原因"
+             value="{{adminRejectReason}}" bindinput="onAdminRejectReasonInput" />
+      <view class="btn-danger" bindtap="onAdminReject">驳回</view>
+    </block>
+  </view>
+
+  <!-- ===== ③ 生成进度 ===== -->
+  <view class="card" wx:if="{{job}}">
+    <view class="row">
+      <view class="section-title">③ 生成进度</view>
+      <view class="{{job._statusCls}}">{{job._statusText}}</view>
+    </view>
+    <view class="subtitle" style="margin: 12rpx 0;">
+      {{job.current_stage || '—'}}{{job.status_text ? ' · ' + job.status_text : ''}}
+    </view>
+    <view class="progress-track">
+      <view class="progress-bar {{job._isActive ? 'progress-pulse' : ''}}"
+            style="width: {{job._progressPct}}%;"></view>
+    </view>
+    <view class="subtitle" style="margin-top: 8rpx; text-align: right;">
+      {{job._progressPct}}% · 更新于 {{job._updatedText}}
+    </view>
+
+    <!-- 时间轴 -->
+    <block wx:if="{{events.length > 0}}">
+      <view class="divider"></view>
+      <view class="row">
+        <view class="label" style="margin: 0;">阶段日志</view>
+        <view class="btn-ghost" bindtap="onToggleEvents" wx:if="{{events.length > 4}}">
+          {{showAllEvents ? '收起' : '展开全部'}}
+        </view>
+      </view>
+      <view class="timeline" style="margin-top: 12rpx;">
+        <view wx:for="{{eventsView}}" wx:key="event_id" class="timeline-item">
+          <view class="timeline-meta">
+            <text wx:if="{{item._pctText}}">[{{item._pctText}}] </text>{{item.stage}} · {{item._timeText}}
+          </view>
+          <view class="timeline-text">{{item.message}}</view>
+        </view>
+      </view>
+    </block>
+
+    <view class="divider"></view>
+    <view class="btn-ghost" bindtap="onToggleJobs">
+      {{showJobs ? '收起' : '查看'}}历史任务{{jobs.length ? ' (' + jobs.length + ')' : ''}}
+    </view>
+    <block wx:if="{{showJobs}}">
+      <view wx:for="{{jobs}}" wx:key="job_id" class="list-item">
+        <view class="flex-1">
+          <view>任务 #{{jobs.length - index}}</view>
+          <view class="subtitle">{{item._updatedText}} · 进度 {{item._progressPct}}%</view>
+        </view>
+        <view class="{{item._statusCls}}">{{item._statusText}}</view>
+      </view>
+    </block>
+  </view>
+
+  <!-- ===== ④ 产物 ===== -->
+  <view class="card" wx:if="{{artifacts.length > 0 || project.status === 'completed'}}">
+    <view class="section-title">④ 产物 ({{artifacts.length}})</view>
+
+    <block wx:if="{{project.status === 'completed'}}">
+      <view class="btn-secondary" bindtap="onCopyPreviewLink">🔗 复制预览链接（首页 SVG）</view>
+    </block>
+
+    <block wx:if="{{artifacts.length > 0}}">
+      <view class="divider"></view>
+      <view wx:for="{{artifacts}}" wx:key="artifact_id" class="list-item">
+        <view class="list-icon">
+          <text wx:if="{{item.is_primary}}">⭐</text>
+          <text wx:else>📦</text>
+        </view>
+        <view class="flex-1">
+          <view class="text-ellipsis">{{item.file_name}}</view>
+          <view class="subtitle">{{item.artifact_type}}</view>
+        </view>
+        <view class="btn-ghost" data-aid="{{item.artifact_id}}" bindtap="onDownloadArtifact">下载</view>
+      </view>
+    </block>
+  </view>
+
+  <!-- ===== 项目设置 ===== -->
+  <view class="card">
+    <view class="section-title">项目设置</view>
+    <view class="btn-secondary" bindtap="onRenameTap">✏️ 重命名</view>
+    <view class="btn-danger" bindtap="onDeleteProject">🗑️ 删除项目</view>
+  </view>
+
+  <!-- ===== 底部主操作（粘性） ===== -->
+  <view class="action-bar" wx:if="{{primaryAction}}">
+    <view
+      class="{{primaryAction.danger ? 'btn-danger' : 'btn'}}"
+      bindtap="onPrimaryTap"
+      disabled="{{primaryAction.disabled}}"
+    >{{primaryAction.label}}</view>
+  </view>
+</view>
+
+<view wx:else class="empty"><text class="empty-emoji">⏳</text>加载中…</view>

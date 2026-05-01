@@ -1,0 +1,2 @@
+# Alembic versions live here. Generate new migrations with:
+#   alembic revision --autogenerate -m "description"

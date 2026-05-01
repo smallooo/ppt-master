@@ -150,6 +150,10 @@ yarn.lock
 .env.local
 .env.*.local
 
+# PPT Master service runtime
+.service-data/
+deploy/certs/
+
 # Database files
 *.db
 *.sqlite

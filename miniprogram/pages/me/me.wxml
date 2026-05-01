@@ -1,0 +1,71 @@
+<view class="container">
+
+  <view wx:if="{{!online}}" class="banner banner-warn">⚠️ 当前无网络</view>
+
+  <!-- 已登录 -->
+  <block wx:if="{{user}}">
+    <view class="hero">
+      <view class="row">
+        <view class="avatar" style="margin-right: 24rpx;">
+          <image wx:if="{{user.avatar_url}}" src="{{user.avatar_url}}" mode="aspectFill" />
+          <text wx:else>👤</text>
+        </view>
+        <view class="flex-1">
+          <view class="hero-title">{{user.nickname || '微信用户'}}</view>
+          <view class="hero-sub text-ellipsis tap-area" bindtap="onCopyOpenid">
+            openid · {{user.openid}}（点此复制）
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <view wx:if="{{quotaWarn}}" class="banner banner-err">{{quotaWarn}}</view>
+
+    <view class="card" wx:if="{{quota}}">
+      <view class="section-title">使用配额</view>
+      <view class="row" style="margin-top: 16rpx;">
+        <view class="subtitle">项目数</view>
+        <view>{{quotaText.project}}</view>
+      </view>
+      <view class="divider"></view>
+      <view class="row">
+        <view class="subtitle">存储占用</view>
+        <view>{{quotaText.storage}}</view>
+      </view>
+    </view>
+
+    <view class="card">
+      <view class="section-title">运营模式（管理员）</view>
+      <view class="subtitle" style="margin-top: 8rpx;">
+        填写 X-Admin-Token 后可在项目详情页审核八项确认
+      </view>
+      <input class="input" password placeholder="填写 admin token"
+             value="{{adminToken}}" bindinput="onAdminTokenInput" />
+      <view class="btn-secondary" bindtap="onSaveAdminToken">
+        {{adminMode ? '更新 token' : '开启运营模式'}}
+      </view>
+      <view class="badge {{adminMode ? 'badge-ok' : ''}}" style="margin-top: 16rpx;">
+        当前：{{adminMode ? '已开启' : '未开启'}}
+      </view>
+    </view>
+
+    <view class="card">
+      <view class="section-title">账号</view>
+      <view class="btn-danger" bindtap="onLogoutTap">退出登录</view>
+    </view>
+  </block>
+
+  <!-- 未登录 -->
+  <block wx:else>
+    <view class="hero" style="margin-top: 40rpx;">
+      <view class="hero-title">欢迎来到 PPT Master</view>
+      <view class="hero-sub">登录后管理项目、查看配额</view>
+    </view>
+    <view class="card" style="text-align: center;">
+      <view class="empty-emoji">🔐</view>
+      <view class="title">未登录</view>
+      <view class="btn" bindtap="onLoginTap">微信一键登录</view>
+    </view>
+  </block>
+
+</view>
