@@ -61,7 +61,7 @@
         点此选择本地文件（PDF / DOCX / PPTX / Markdown 等）
       </view>
       <view class="row" style="margin-top: 16rpx;">
-        <input class="input flex-1" style="margin-top: 0;"
+        <input class="input flex-1 detail-url-input" style="margin-top: 0;"
           placeholder="或粘贴 URL 链接"
           value="{{urlInput}}" bindinput="onUrlInput" />
         <view class="btn-secondary" style="width: 160rpx; margin-top: 0; margin-left: 16rpx;" bindtap="onAddUrl">添加 URL</view>

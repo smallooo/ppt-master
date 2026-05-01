@@ -54,7 +54,10 @@ Page({
     if (!project) return null;
     const s = project.status;
     if (s === 'created' || s === 'uploading') {
-      return { key: 'finalize', label: '完成上传，进入解析', disabled: this.data.sources.length === 0 };
+      if (this.data.sources.length === 0) {
+        return { key: 'generate', label: '🚀 直接生成 PPT' };
+      }
+      return { key: 'finalize', label: '完成上传，进入解析' };
     }
     if (s === 'normalizing') return { key: 'wait', label: '解析中…', disabled: true };
     if (s === 'awaiting_confirmation') {
@@ -268,9 +271,6 @@ Page({
   },
 
   async onFinalize() {
-    if (!this.data.sources.length) {
-      return wx.showToast({ title: '请先上传至少一个素材', icon: 'none' });
-    }
     try {
       wx.showLoading({ title: '解析中', mask: true });
       await api.finalizeSources(this.data.pid);

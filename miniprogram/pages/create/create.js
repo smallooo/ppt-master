@@ -20,7 +20,9 @@ Page({
     templates: [],
     loadingTpl: true,
     fallbackUsed: false,
+    showTplPicker: false,
     selectedFmt: '',
+    selectedTpl: null,
     projectName: '',
     pageMin: 8,
     pageMax: 12,
@@ -40,6 +42,7 @@ Page({
       this.setData({
         templates: list,
         selectedFmt: list[0].canvas_format,
+        selectedTpl: list[0],
         loadingTpl: false,
         fallbackUsed: !(tpl && tpl.length)
       });
@@ -48,15 +51,33 @@ Page({
       this.setData({
         templates: FALLBACK_TEMPLATES,
         selectedFmt: FALLBACK_TEMPLATES[0].canvas_format,
+        selectedTpl: FALLBACK_TEMPLATES[0],
         loadingTpl: false,
         fallbackUsed: true
       });
     }
   },
 
+  onOpenTplPicker() {
+    if (this.data.loadingTpl) return;
+    this.setData({ showTplPicker: true });
+  },
+
+  onCloseTplPicker() {
+    this.setData({ showTplPicker: false });
+  },
+
+  onTplSheetTap() {},
+
   onSelectTpl(e) {
     if (wx.vibrateShort) wx.vibrateShort({ type: 'light' });
-    this.setData({ selectedFmt: e.currentTarget.dataset.fmt });
+    const fmt = e.currentTarget.dataset.fmt;
+    const selectedTpl = (this.data.templates || []).find(item => item.canvas_format === fmt) || null;
+    this.setData({
+      selectedFmt: fmt,
+      selectedTpl: selectedTpl,
+      showTplPicker: false
+    });
   },
   onNameInput(e) { this.setData({ projectName: e.detail.value }); },
   onMinInput(e) {

@@ -1,1 +1,65 @@
 /* pages/create/create.wxss */
+.create-input {
+	min-height: 96rpx;
+	padding-top: 26rpx;
+	padding-bottom: 26rpx;
+	font-size: 30rpx;
+	line-height: 1.2;
+}
+
+.tpl-trigger {
+	margin-bottom: 0;
+}
+
+.tpl-trigger-title {
+	font-size: 30rpx;
+	font-weight: 600;
+}
+
+.tpl-trigger-side {
+	align-items: flex-end;
+	gap: 10rpx;
+	flex-shrink: 0;
+}
+
+.tpl-trigger-link {
+	color: var(--primary);
+	font-size: 24rpx;
+	font-weight: 500;
+}
+
+.tpl-picker-mask {
+	position: fixed;
+	inset: 0;
+	background: rgba(15, 23, 42, 0.42);
+	display: flex;
+	align-items: flex-end;
+	justify-content: stretch;
+	z-index: 90;
+}
+
+.tpl-picker-sheet {
+	width: 100%;
+	max-height: 78vh;
+	background: #ffffff;
+	border-radius: 32rpx 32rpx 0 0;
+	padding: 20rpx 24rpx calc(28rpx + env(safe-area-inset-bottom));
+	box-shadow: 0 -12rpx 40rpx rgba(15, 23, 42, 0.14);
+}
+
+.tpl-picker-handle {
+	width: 96rpx;
+	height: 8rpx;
+	border-radius: 999rpx;
+	background: #cbd5e1;
+	margin: 0 auto 20rpx;
+}
+
+.tpl-picker-head {
+	align-items: flex-start;
+}
+
+.tpl-picker-list {
+	max-height: 58vh;
+	padding-bottom: 8rpx;
+}

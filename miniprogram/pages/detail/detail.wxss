@@ -1,1 +1,8 @@
 /* pages/detail/detail.wxss */
+.detail-url-input {
+	min-height: 96rpx;
+	padding-top: 26rpx;
+	padding-bottom: 26rpx;
+	font-size: 30rpx;
+	line-height: 1.2;
+}

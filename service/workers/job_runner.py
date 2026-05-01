@@ -30,6 +30,7 @@ class InProcessJobRunner:
         self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="ppt-service")
         self._futures: dict[str, Future[None]] = {}
         self._lock = Lock()
+        self._real_pipeline_disabled_reason: str | None = None
 
     def enqueue_generation(self, project_id: str, job_id: str) -> None:
         with self._lock:
@@ -60,7 +61,7 @@ class InProcessJobRunner:
             settings = self.workspace_manager.settings
             used_real = False
 
-            if settings.openai_api_key:
+            if settings.openai_api_key and self._real_pipeline_disabled_reason is None:
                 try:
                     def _progress(stage: str, percent: int, status_text: str) -> None:
                         self._abort_if_cancelled(project_id, job_id)
@@ -88,6 +89,9 @@ class InProcessJobRunner:
                 except JobCancelled:
                     raise
                 except PipelineError as exc:
+                    failure_text = str(exc)
+                    if _is_provider_temporarily_unavailable(failure_text):
+                        self._real_pipeline_disabled_reason = failure_text
                     logger.warning(
                         "Real pipeline failed for project=%s job=%s: %s — using fallback",
                         project_id, job_id, exc,
@@ -97,6 +101,23 @@ class InProcessJobRunner:
                         stage="real_pipeline_failed", progress_percent=80,
                         message=f"Real pipeline failed, using fallback: {exc}",
                     )
+            elif settings.openai_api_key and self._real_pipeline_disabled_reason is not None:
+                logger.warning(
+                    "Real pipeline skipped for project=%s job=%s: %s",
+                    project_id,
+                    job_id,
+                    self._real_pipeline_disabled_reason,
+                )
+                self.workspace_manager.record_job_event(
+                    project_id,
+                    job_id,
+                    stage="real_pipeline_skipped",
+                    progress_percent=30,
+                    message=(
+                        "Real pipeline unavailable, using fallback: "
+                        f"{self._real_pipeline_disabled_reason}"
+                    ),
+                )
 
             if not used_real:
                 self._abort_if_cancelled(project_id, job_id)
@@ -144,3 +165,12 @@ class InProcessJobRunner:
     def _abort_if_cancelled(self, project_id: str, job_id: str) -> None:
         if self.workspace_manager.is_job_cancelled(project_id, job_id):
             raise JobCancelled()
+
+
+def _is_provider_temporarily_unavailable(error_text: str) -> bool:
+    lowered = error_text.lower()
+    return (
+        "http 402" in lowered
+        or "insufficient balance" in lowered
+        or "payment required" in lowered
+    )

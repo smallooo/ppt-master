@@ -166,7 +166,7 @@ class WorkspaceManager:
             project_name=request.project_name,
             canvas_format=request.canvas_format,
             status=ProjectStatus.CREATED.value,
-            status_text="Project created. Upload source files next.",
+            status_text="项目已创建，请先上传源文件。",
             requested_page_min=request.requested_page_min,
             requested_page_max=request.requested_page_max,
             source_type_hint=request.source_type_hint,
@@ -275,8 +275,6 @@ class WorkspaceManager:
         project_root = self.settings.projects_root / project_id
         record = self._read_project_record(project_root)
         source_records = self._read_source_records(project_root)
-        if not source_records:
-            raise FileNotFoundError("No uploaded sources found")
 
         artifacts = self._read_artifact_records(project_root)
         normalized_sources: list[SourceFileRecord] = []
@@ -431,6 +429,11 @@ class WorkspaceManager:
         project_root = self.settings.projects_root / project_id
         project_record = self._read_project_record(project_root)
         project_status = ProjectStatus(project_record.status)
+        if project_status in {ProjectStatus.CREATED, ProjectStatus.UPLOADING}:
+            self.finalize_sources(project_id)
+            project_record = self._read_project_record(project_root)
+            project_status = ProjectStatus(project_record.status)
+
         if project_status is ProjectStatus.AWAITING_CONFIRMATION:
             project_record = self._auto_approve_confirmation(project_root, project_record, now)
             project_status = ProjectStatus(project_record.status)
@@ -1132,9 +1135,9 @@ class WorkspaceManager:
 
     def _next_actions(self, status: ProjectStatus) -> list[NextAction]:
         if status is ProjectStatus.CREATED:
-            return [NextAction.UPLOAD_SOURCE]
+            return [NextAction.UPLOAD_SOURCE, NextAction.START_GENERATION]
         if status is ProjectStatus.UPLOADING:
-            return [NextAction.UPLOAD_SOURCE, NextAction.FINALIZE_UPLOADS]
+            return [NextAction.UPLOAD_SOURCE, NextAction.FINALIZE_UPLOADS, NextAction.START_GENERATION]
         if status is ProjectStatus.AWAITING_CONFIRMATION:
             return [NextAction.START_GENERATION]
         if status is ProjectStatus.READY_TO_GENERATE:
