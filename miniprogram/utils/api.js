@@ -54,6 +54,13 @@ const api = {
   getConfirmation: function (pid) {
     return request({ path: '/api/v1/mini/projects/' + pid + '/confirmation' });
   },
+  approveConfirmation: function (pid, body) {
+    return request({
+      method: 'POST',
+      path: '/api/v1/mini/projects/' + pid + '/confirmation/approve',
+      data: body
+    });
+  },
 
   // -------- 任务 --------
   generate: function (pid) {

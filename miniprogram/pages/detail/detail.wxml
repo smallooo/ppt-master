@@ -82,8 +82,71 @@
       👤 确认方式：{{confirmation.approved_by}} · {{confirmation._approvedText}}
     </view>
     <view class="subtitle" wx:if="{{confirmation.status === 'pending'}}">
-      规格已生成，系统将自动进入生成阶段
+      {{confirmation.suggested_spec.confirmation_phase === 'page_briefs'
+        ? '系统已生成每页简要内容，请确认后再开始生成 PPT。'
+        : '系统已生成默认提纲。你可以直接编辑后确认，确认完成后会先生成每页简要内容。'}}
     </view>
+
+    <block wx:if="{{confirmation.status === 'pending' && confirmation.suggested_spec.confirmation_phase !== 'page_briefs'}}">
+      <view class="divider"></view>
+      <view class="label" style="margin: 0 0 12rpx;">可编辑提纲</view>
+      <textarea
+        class="outline-editor"
+        value="{{outlineDraft}}"
+        bindinput="onOutlineInput"
+        maxlength="-1"
+        auto-height
+      />
+      <view class="btn-secondary" style="margin-top: 16rpx;" bindtap="onApproveOutline">确认当前提纲</view>
+    </block>
+
+    <block wx:if="{{confirmation.status === 'pending' && confirmation.suggested_spec.confirmation_phase === 'page_briefs'}}">
+      <view class="divider"></view>
+      <view class="row">
+        <view class="label" style="margin: 0;">每页简要内容</view>
+        <view class="brief-toolbar">
+          <view class="btn-ghost brief-toolbar-btn" bindtap="onRestorePageBriefs">恢复系统版本</view>
+          <view class="btn-ghost brief-toolbar-btn" bindtap="onAddPageBrief">新增一页</view>
+        </view>
+      </view>
+      <view wx:for="{{pageBriefs}}" wx:key="page_no" class="brief-card">
+        <view class="row brief-card-head">
+          <view class="brief-label">P{{item.page_no}}</view>
+          <view class="brief-actions">
+            <view class="btn-ghost brief-action-btn" data-index="{{index}}" bindtap="onMovePageBriefUp">上移</view>
+            <view class="btn-ghost brief-action-btn" data-index="{{index}}" bindtap="onMovePageBriefDown">下移</view>
+            <view class="btn-ghost brief-action-btn brief-action-danger" data-index="{{index}}" bindtap="onDeletePageBrief">删除</view>
+          </view>
+        </view>
+        <input
+          class="brief-title-input"
+          value="{{item.title}}"
+          data-index="{{index}}"
+          bindinput="onPageBriefTitleInput"
+          placeholder="请输入页面标题"
+        />
+        <textarea
+          class="brief-summary-editor"
+          value="{{item.summary}}"
+          data-index="{{index}}"
+          bindinput="onPageBriefSummaryInput"
+          maxlength="-1"
+          auto-height
+          placeholder="请输入该页的简要摘要"
+        />
+        <view class="brief-mini-label">要点，每行一条</view>
+        <textarea
+          class="brief-bullets-editor"
+          value="{{item.bulletsText}}"
+          data-index="{{index}}"
+          bindinput="onPageBriefBulletsInput"
+          maxlength="-1"
+          auto-height
+          placeholder="请输入页面要点，每行一条"
+        />
+      </view>
+      <view class="btn-secondary" style="margin-top: 16rpx;" bindtap="onApprovePageBriefs">确认每页内容</view>
+    </block>
 
     <!-- 结构化展示 spec -->
     <block wx:if="{{specEntries.length > 0}}">

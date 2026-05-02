@@ -10,6 +10,7 @@ from uuid import uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from service.adapters.openai_client import ChatMessage, OpenAIError, chat
 from service.adapters.fallback_pptx_exporter import export_fallback_pptx
 from service.adapters.source_normalizer import normalize_source_file
 from service.config import ServiceSettings
@@ -322,33 +323,71 @@ class WorkspaceManager:
         self._write_source_records(project_root, normalized_sources)
         self._write_artifact_records(project_root, artifacts)
 
-        approved_spec = {
+        suggested_spec = {
             "project_name": record.project_name,
             "canvas_format": record.canvas_format,
             "page_range": {
                 "min": record.requested_page_min,
                 "max": record.requested_page_max,
             },
-            "source_summary": [
-                {
-                    "source_file_id": source.source_file_id,
-                    "original_name": source.original_name,
-                    "source_kind": source.source_kind,
-                    "role": source.role,
-                    "normalized_markdown_path": source.normalized_markdown_path,
+            "source_summary": self._build_source_summary(record, normalized_sources),
+        }
+
+        if normalized_sources:
+            approved_spec = {
+                **suggested_spec,
+                "approved": True,
+                "approved_by": "system",
+                "approval_mode": "auto",
+            }
+
+            updated = ProjectRecord(
+                **{
+                    **asdict(record),
+                    "status": ProjectStatus.READY_TO_GENERATE.value,
+                    "status_text": "Sources normalized. Ready to start generation.",
+                    "updated_at": now.isoformat(),
                 }
-                for source in normalized_sources
-            ],
-            "approved": True,
-            "approved_by": "system",
-            "approval_mode": "auto",
+            )
+            self._write_project_record(project_root, updated)
+            self._write_confirmation_record(
+                project_root,
+                ConfirmationRecord(
+                    project_id=project_id,
+                    status=ConfirmationStatus.APPROVED.value,
+                    suggested_spec=approved_spec,
+                    approved_spec=approved_spec,
+                    approved_by="system",
+                    approved_at=now.isoformat(),
+                    revision_note=None,
+                    created_at=now.isoformat(),
+                    updated_at=now.isoformat(),
+                ),
+            )
+            return FinalizeSourcesResponse(
+                project_id=project_id,
+                status=ProjectStatus.READY_TO_GENERATE,
+                status_text=updated.status_text,
+                normalized_source_count=len(normalized_sources),
+            )
+
+        outline_lines = self._build_default_source_bundle(record)
+        outline_markdown = "\n".join(["# Normalized Sources", "", *outline_lines]).rstrip() + "\n"
+        suggested_spec = {
+            **suggested_spec,
+            "outline_markdown": outline_markdown,
+            "outline_sections": self._extract_outline_sections(outline_lines),
+            "requires_user_confirmation": True,
+            "generated_by": "system_default_outline",
+            "confirmation_phase": "outline",
+            "approval_mode": "user_required",
         }
 
         updated = ProjectRecord(
             **{
                 **asdict(record),
-                "status": ProjectStatus.READY_TO_GENERATE.value,
-                "status_text": "Sources normalized. Ready to start generation.",
+                "status": ProjectStatus.AWAITING_CONFIRMATION.value,
+                "status_text": "系统已生成默认提纲，请确认并修改后再开始生成。",
                 "updated_at": now.isoformat(),
             }
         )
@@ -357,11 +396,11 @@ class WorkspaceManager:
             project_root,
             ConfirmationRecord(
                 project_id=project_id,
-                status=ConfirmationStatus.APPROVED.value,
-                suggested_spec=approved_spec,
-                approved_spec=approved_spec,
-                approved_by="system",
-                approved_at=now.isoformat(),
+                status=ConfirmationStatus.PENDING.value,
+                suggested_spec=suggested_spec,
+                approved_spec=None,
+                approved_by=None,
+                approved_at=None,
                 revision_note=None,
                 created_at=now.isoformat(),
                 updated_at=now.isoformat(),
@@ -369,7 +408,7 @@ class WorkspaceManager:
         )
         return FinalizeSourcesResponse(
             project_id=project_id,
-            status=ProjectStatus.READY_TO_GENERATE,
+            status=ProjectStatus.AWAITING_CONFIRMATION,
             status_text=updated.status_text,
             normalized_source_count=len(normalized_sources),
         )
@@ -391,15 +430,61 @@ class WorkspaceManager:
             raise ValueError("Project is not awaiting confirmation")
 
         confirmation = self._read_confirmation_record(project_root)
+        suggested_spec = request.updated_spec or confirmation.suggested_spec
+        outline_markdown = suggested_spec.get("outline_markdown") if isinstance(suggested_spec, dict) else None
+        if isinstance(outline_markdown, str) and outline_markdown.strip():
+            suggested_spec = {
+                **suggested_spec,
+                "outline_markdown": outline_markdown,
+                "outline_sections": self._extract_outline_sections(outline_markdown.splitlines()),
+            }
+        confirmation_phase = suggested_spec.get("confirmation_phase") if isinstance(suggested_spec, dict) else None
+        if confirmation_phase == "outline":
+            next_spec = {
+                **suggested_spec,
+                "page_briefs": self._build_page_briefs(project_record, suggested_spec),
+                "confirmation_phase": "page_briefs",
+                "outline_confirmed_by": request.approved_by,
+            }
+            updated_confirmation = ConfirmationRecord(
+                project_id=confirmation.project_id,
+                status=ConfirmationStatus.PENDING.value,
+                suggested_spec=next_spec,
+                approved_spec=None,
+                approved_by=None,
+                approved_at=None,
+                revision_note=request.revision_note,
+                created_at=confirmation.created_at,
+                updated_at=now.isoformat(),
+            )
+            self._write_confirmation_record(project_root, updated_confirmation)
+
+            updated_project = ProjectRecord(
+                **{
+                    **asdict(project_record),
+                    "status": ProjectStatus.AWAITING_CONFIRMATION.value,
+                    "status_text": "已生成每页简要内容，请确认后再开始生成 PPT。",
+                    "updated_at": now.isoformat(),
+                }
+            )
+            self._write_project_record(project_root, updated_project)
+            return ApproveConfirmationResponse(
+                project_id=project_id,
+                status=ProjectStatus.AWAITING_CONFIRMATION,
+                status_text=updated_project.status_text,
+            )
+
         approved_spec = {
-            **confirmation.suggested_spec,
+            **suggested_spec,
             "approved": True,
             "approved_by": request.approved_by,
+            "approval_mode": "user_confirmed",
+            "confirmation_phase": "complete",
         }
         updated_confirmation = ConfirmationRecord(
             project_id=confirmation.project_id,
             status=ConfirmationStatus.APPROVED.value,
-            suggested_spec=confirmation.suggested_spec,
+            suggested_spec=suggested_spec,
             approved_spec=approved_spec,
             approved_by=request.approved_by,
             approved_at=now.isoformat(),
@@ -435,8 +520,7 @@ class WorkspaceManager:
             project_status = ProjectStatus(project_record.status)
 
         if project_status is ProjectStatus.AWAITING_CONFIRMATION:
-            project_record = self._auto_approve_confirmation(project_root, project_record, now)
-            project_status = ProjectStatus(project_record.status)
+            raise ValueError("Default outline requires confirmation before generation")
 
         if project_status is not ProjectStatus.READY_TO_GENERATE:
             raise ValueError("Project is not ready to generate")
@@ -978,18 +1062,88 @@ class WorkspaceManager:
     ) -> str:
         spec = confirmation.approved_spec or confirmation.suggested_spec
         source_summary = spec.get("source_summary", [])
+        image_resources = self._build_default_image_resources(project)
+        design_profile = self._build_design_profile(project)
+        page_rhythm = self._build_page_rhythm(project)
         lines = [
             f"# {project.project_name}",
             "",
-            "## Service Draft Design Spec",
+            "## I. Project Information",
+            "",
+            f"- Project name: {project.project_name}",
+            f"- Topic hint: {project.source_type_hint or project.project_name}",
+            f"- Target audience: {design_profile['target_audience']}",
+            f"- Style objective: {design_profile['style_objective']}",
+            "",
+            "## II. Canvas & Page Plan",
             "",
             f"- Canvas format: {project.canvas_format}",
+            f"- Canvas dimensions: {design_profile['canvas_dimensions']}",
             f"- Requested pages: {project.requested_page_min}-{project.requested_page_max}",
             f"- Approved by: {confirmation.approved_by or 'unknown'}",
             "",
-            "## Source Summary",
+            "## III. Visual Theme",
+            "",
+            f"- Theme statement: {design_profile['theme_statement']}",
+            f"- Primary color: {design_profile['colors']['primary']}",
+            f"- Secondary color: {design_profile['colors']['secondary']}",
+            f"- Accent color: {design_profile['colors']['accent']}",
+            f"- Background color: {design_profile['colors']['background']}",
+            f"- Surface color: {design_profile['colors']['surface']}",
+            f"- Primary text color: {design_profile['colors']['text_primary']}",
+            f"- Secondary text color: {design_profile['colors']['text_secondary']}",
+            "",
+            "## IV. Typography Plan",
+            "",
+            f"- Title font: {design_profile['typography']['title_family']}",
+            f"- Body font: {design_profile['typography']['body_family']}",
+            f"- Emphasis font: {design_profile['typography']['emphasis_family']}",
+            f"- Code font: {design_profile['typography']['code_family']}",
+            f"- Body baseline: {design_profile['typography']['body']}px",
+            f"- Title size: {design_profile['typography']['title']}px",
+            f"- Subtitle size: {design_profile['typography']['subtitle']}px",
+            f"- Annotation size: {design_profile['typography']['annotation']}px",
+            "",
+            "## V. Layout System",
+            "",
+            f"- Cover strategy: {design_profile['layout']['cover']}",
+            f"- Content strategy: {design_profile['layout']['content']}",
+            f"- Dense-page strategy: {design_profile['layout']['dense']}",
+            f"- Breathing-page strategy: {design_profile['layout']['breathing']}",
+            "",
+            "### Page Rhythm Plan",
             "",
         ]
+        for page_key, rhythm in page_rhythm.items():
+            lines.append(f"- {page_key}: {rhythm}")
+        lines.extend([
+            "",
+            "## VI. Icon System",
+            "",
+            f"- Icon library: {design_profile['icons']['library']}",
+            f"- Stroke width: {design_profile['icons']['stroke_width']}",
+            f"- Inventory: {', '.join(design_profile['icons']['inventory'])}",
+            "",
+            "## VII. Visualization Reference List",
+            "",
+            f"- Preferred visual forms: {', '.join(design_profile['visualization_preferences'])}",
+            "",
+            "## VIII. Page Brief Draft",
+            "",
+        ])
+        for brief in spec.get("page_briefs", []):
+            if not isinstance(brief, dict):
+                continue
+            lines.append(
+                f"- P{int(brief.get('page_no') or 0):02d} {brief.get('title', 'Untitled')}: {brief.get('summary', '')}"
+            )
+            for bullet in brief.get("bullets", [])[:4]:
+                lines.append(f"  - {bullet}")
+        lines.extend([
+            "",
+            "## Source Summary",
+            "",
+        ])
         if source_summary:
             for source in source_summary:
                 lines.append(
@@ -1006,6 +1160,39 @@ class WorkspaceManager:
             json.dumps(spec, ensure_ascii=False, indent=2),
             "```",
             "",
+            "## IX. Image Resource List",
+            "",
+            "| Filename | Dimensions | Ratio | Purpose | Intent | Type | Status | Generation Description |",
+            "| -------- | ---------- | ----- | ------- | ------ | ---- | ------ | ---------------------- |",
+        ])
+        for image in image_resources:
+            lines.append(
+                "| "
+                f"{image['filename']} | {image['dimensions']} | {image['ratio']} | "
+                f"{image['purpose']} | {image['intent']} | {image['type']} | "
+                f"{image['status']} | {image['description']} |"
+            )
+        lines.extend([
+            "",
+            "## X. Content Outline",
+            "",
+            "- P01 Cover: full-bleed opening with one strong message and restrained overlay.",
+            "- Early pages should alternate between overview, evidence, and framework pages rather than repeating one split layout.",
+            "- Dense pages should handle comparisons, lists, tables, and structured arguments.",
+            "- Breathing pages should use a single hero statement, metric, quote, or image-led insight.",
+            "- Final pages should converge to recommendation, roadmap, and close.",
+            "",
+            "## XI. Speaker Notes Requirements",
+            "",
+            "- Each page should have a short presenter script with a transition sentence.",
+            "- Notes should explain why the page exists, not restate all visible text.",
+            "",
+            "## XII. Technical Constraints Reminder",
+            "",
+            "- Use native SVG elements compatible with PPT export.",
+            "- Avoid repeating the same composition family more than twice in a row.",
+            "- Use only approved project-local images and icon inventory entries.",
+            "",
         ])
         return "\n".join(lines)
 
@@ -1015,12 +1202,20 @@ class WorkspaceManager:
         confirmation: ConfirmationRecord,
     ) -> str:
         spec = confirmation.approved_spec or confirmation.suggested_spec
+        design_profile = self._build_design_profile(project)
         lock_payload = {
             "project_id": project.project_id,
             "project_name": project.project_name,
             "canvas_format": project.canvas_format,
             "approved_by": confirmation.approved_by,
             "approved_at": confirmation.approved_at,
+            "colors": design_profile["colors"],
+            "typography": design_profile["typography"],
+            "icons": design_profile["icons"],
+            "images": self._build_default_image_resources(project),
+            "page_rhythm": self._build_page_rhythm(project),
+            "layout": design_profile["layout"],
+            "visualization_preferences": design_profile["visualization_preferences"],
             "spec": spec,
         }
         return "\n".join(
@@ -1035,6 +1230,7 @@ class WorkspaceManager:
         )
 
     def _build_normalized_source_bundle(self, project_root: Path) -> str:
+        project = self._read_project_record(project_root)
         sources = self._read_source_records(project_root)
         sections: list[str] = ["# Normalized Sources", ""]
         for source in sources:
@@ -1053,7 +1249,312 @@ class WorkspaceManager:
                     "",
                 ]
             )
+        if len(sections) == 2:
+            outline_markdown = self._resolve_outline_markdown(project_root)
+            if outline_markdown:
+                return outline_markdown.rstrip() + "\n"
+            sections.extend(self._build_default_source_bundle(project))
         return "\n".join(sections).rstrip() + "\n"
+
+    def _build_source_summary(
+        self,
+        project: ProjectRecord,
+        normalized_sources: list[SourceFileRecord],
+    ) -> list[dict[str, object]]:
+        if normalized_sources:
+            return [
+                {
+                    "source_file_id": source.source_file_id,
+                    "original_name": source.original_name,
+                    "source_kind": source.source_kind,
+                    "role": source.role,
+                    "normalized_markdown_path": source.normalized_markdown_path,
+                }
+                for source in normalized_sources
+            ]
+
+        return [
+            {
+                "source_file_id": "system-generated",
+                "original_name": "系统默认提纲",
+                "source_kind": "generated",
+                "role": "system_seed",
+                "normalized_markdown_path": "normalized/normalized_sources.md",
+                "description": "No source files uploaded. Generated a default outline from project metadata.",
+            }
+        ]
+
+    def _build_default_image_resources(self, project: ProjectRecord) -> list[dict[str, str]]:
+        dimensions, ratio = self._canvas_dimensions(project.canvas_format)
+        topic_hint = project.source_type_hint or "presentation"
+        design_profile = self._build_design_profile(project)
+        return [
+            {
+                "filename": "cover_bg.png",
+                "dimensions": dimensions,
+                "ratio": ratio,
+                "purpose": "封面背景图",
+                "intent": "Hero",
+                "type": "Background",
+                "status": "Pending",
+                "description": (
+                    f"为《{project.project_name}》生成一张{design_profile['style_objective']}风格的专业演示文稿封面背景图，"
+                    f"主题围绕 {topic_hint}，主色使用 {design_profile['colors']['primary']} 与 {design_profile['colors']['accent']}，"
+                    "保留大面积留白供标题覆盖，并避免通用企业模板感。"
+                ),
+            }
+        ]
+
+    def _build_design_profile(self, project: ProjectRecord) -> dict[str, object]:
+        hint = f"{project.project_name} {project.source_type_hint or ''}".lower()
+        if any(token in hint for token in ("ai", "agent", "tech", "digital", "saas", "互联网", "科技")):
+            return {
+                "style_objective": "科技咨询",
+                "target_audience": "管理层、产品团队、技术决策者",
+                "theme_statement": "结构化叙事下的科技感表达，强调结论、层次与视觉留白。",
+                "canvas_dimensions": self._canvas_dimensions(project.canvas_format)[0],
+                "colors": {
+                    "primary": "#0F3D66",
+                    "secondary": "#DCE7F2",
+                    "accent": "#18B8A8",
+                    "background": "#F6F8FB",
+                    "surface": "#FFFFFF",
+                    "text_primary": "#10253E",
+                    "text_secondary": "#4F647A",
+                },
+                "typography": {
+                    "title_family": '"Microsoft YaHei", "PingFang SC", sans-serif',
+                    "body_family": '"Microsoft YaHei", "PingFang SC", sans-serif',
+                    "emphasis_family": 'Arial, "Microsoft YaHei", sans-serif',
+                    "code_family": 'Consolas, "Courier New", monospace',
+                    "body": 20,
+                    "title": 40,
+                    "subtitle": 28,
+                    "annotation": 14,
+                },
+                "icons": {
+                    "library": "chunk-filled",
+                    "stroke_width": 2,
+                    "inventory": [
+                        "chunk-filled/chart-bar",
+                        "chunk-filled/users",
+                        "chunk-filled/target",
+                        "chunk-filled/arrow-trend-up",
+                    ],
+                },
+                "layout": {
+                    "cover": "Full-bleed hero visual with restrained overlay and centered or offset title block.",
+                    "content": "Alternate between asymmetric editorial layouts, split layouts, and evidence-led comparison pages.",
+                    "dense": "Use structured comparison tables, KPI bands, timelines, and grouped evidence blocks.",
+                    "breathing": "Use one hero statement, one dominant chart, or one image-led insight per page.",
+                },
+                "visualization_preferences": ["kpi_band", "comparison_matrix", "timeline", "grouped_bar_chart"],
+            }
+
+        return {
+            "style_objective": "高端通用",
+            "target_audience": "客户、管理层、跨部门汇报对象",
+            "theme_statement": "以清晰逻辑为主线，通过节奏变化与重点放大减少模板感。",
+            "canvas_dimensions": self._canvas_dimensions(project.canvas_format)[0],
+            "colors": {
+                "primary": "#1F4E79",
+                "secondary": "#E8EEF5",
+                "accent": "#D97841",
+                "background": "#FAFBFD",
+                "surface": "#FFFFFF",
+                "text_primary": "#1F2937",
+                "text_secondary": "#5B6472",
+            },
+            "typography": {
+                "title_family": '"Microsoft YaHei", "PingFang SC", sans-serif',
+                "body_family": '"Microsoft YaHei", "PingFang SC", sans-serif',
+                "emphasis_family": 'Georgia, "Times New Roman", serif',
+                "code_family": 'Consolas, "Courier New", monospace',
+                "body": 18,
+                "title": 36,
+                "subtitle": 26,
+                "annotation": 13,
+            },
+            "icons": {
+                "library": "tabler-filled",
+                "stroke_width": 2,
+                "inventory": [
+                    "tabler-filled/chart-bar",
+                    "tabler-filled/target",
+                    "tabler-filled/bulb",
+                    "tabler-filled/message",
+                ],
+            },
+            "layout": {
+                "cover": "Hero cover with strong title hierarchy and one visual anchor.",
+                "content": "Mix editorial text-led pages, side-by-side pages, and framework pages rather than repeating one grid.",
+                "dense": "Allow 2-column or 3-block structures for analysis and comparison pages.",
+                "breathing": "Reserve whitespace and avoid multi-card grids on insight or transition pages.",
+            },
+            "visualization_preferences": ["process_flow", "comparison_table", "timeline", "kpi_cards"],
+        }
+
+    def _build_page_rhythm(self, project: ProjectRecord) -> dict[str, str]:
+        max_pages = max(project.requested_page_min, project.requested_page_max)
+        plan: dict[str, str] = {}
+        for page_no in range(1, max_pages + 1):
+            key = f"P{page_no:02d}"
+            if page_no == 1 or page_no == max_pages:
+                plan[key] = "anchor"
+            elif page_no in {2, 5, 8}:
+                plan[key] = "breathing"
+            else:
+                plan[key] = "dense"
+        return plan
+
+    def _canvas_dimensions(self, canvas_format: str) -> tuple[str, str]:
+        presets = {
+            "ppt169": ("1920x1080", "16:9"),
+            "ppt43": ("1600x1200", "4:3"),
+            "story": ("1080x1920", "9:16"),
+            "xhs": ("1242x1660", "3:4"),
+        }
+        return presets.get((canvas_format or "").lower(), ("1920x1080", "16:9"))
+
+    def _build_default_source_bundle(self, project: ProjectRecord) -> list[str]:
+        topic = (project.source_type_hint or project.project_name or "该主题").strip()
+        min_pages = project.requested_page_min
+        max_pages = project.requested_page_max
+        lines = [
+            "## 项目概览",
+            "",
+            f"- 项目名称：{project.project_name}",
+            f"- 主题方向：{topic}",
+            f"- 建议页数：{min_pages}-{max_pages} 页",
+            f"- 输出画布：{project.canvas_format}",
+            "",
+            f"本演示文稿围绕“{topic}”展开，适用于在缺少原始素材时快速生成一版可编辑的初稿。",
+            "建议先用这版初稿确认结构与重点，再补充真实素材进行增强。",
+            "",
+            "## 背景与目标",
+            "",
+            f"- 说明“{topic}”相关背景、当前现状与关键问题。",
+            "- 阐明本次汇报希望解决的核心目标、受众关注点与预期结果。",
+            "- 定义成功标准，便于后续内容和行动建议对齐。",
+            "",
+            "## 核心信息框架",
+            "",
+            "- 提炼 3 到 5 个最重要的信息点，避免平均用力。",
+            "- 将内容组织为“现状判断 - 关键洞察 - 解决方案 - 落地动作”的叙事结构。",
+            "- 每一页聚焦一个中心结论，并配套必要的解释和证据。",
+            "",
+            "## 方案与亮点",
+            "",
+            f"- 给出围绕“{topic}”的总体方案、关键模块或执行路径。",
+            "- 强调差异化亮点、可复用能力与预期价值。",
+            "- 如有必要，可补充时间线、职责分工或资源需求。",
+            "",
+            "## 风险与下一步",
+            "",
+            "- 识别推进过程中可能遇到的主要风险、依赖项和约束条件。",
+            "- 给出分阶段推进建议，明确近期动作与里程碑。",
+            "- 在结尾总结核心结论，并给出下一步决策建议。",
+            "",
+        ]
+        return lines
+
+    def _build_page_briefs(
+        self,
+        project: ProjectRecord,
+        spec: dict[str, object],
+    ) -> list[dict[str, object]]:
+        outline_markdown = str(spec.get("outline_markdown") or "").strip()
+        if not outline_markdown or not self.settings.openai_api_key:
+            return self._fallback_page_briefs(project, spec)
+
+        user_prompt = (
+            f"PROJECT: {project.project_name}\n"
+            f"PAGE RANGE: {project.requested_page_min}-{project.requested_page_max}\n\n"
+            "OUTLINE MARKDOWN:\n"
+            f"{outline_markdown[:12000]}\n\n"
+            "Return strict JSON with key 'pages'. Each page item must include page_no, title, summary, and bullets. "
+            "Keep it concise and suitable for a user review step before final PPT generation."
+        )
+        try:
+            raw = chat(
+                self.settings,
+                model=self.settings.openai_model_strategist,
+                messages=[
+                    ChatMessage(
+                        "system",
+                        "You draft page-by-page PPT review briefs. Reply ONLY strict JSON: "
+                        '{"pages":[{"page_no":1,"title":"...","summary":"...","bullets":["...","..."]}]}'
+                    ),
+                    ChatMessage("user", user_prompt),
+                ],
+                temperature=0.3,
+                response_format={"type": "json_object"},
+            )
+            payload = json.loads(raw)
+            pages = payload.get("pages")
+            if isinstance(pages, list):
+                cleaned: list[dict[str, object]] = []
+                for idx, item in enumerate(pages, start=1):
+                    if not isinstance(item, dict):
+                        continue
+                    bullets = [str(v).strip() for v in (item.get("bullets") or []) if str(v).strip()]
+                    cleaned.append(
+                        {
+                            "page_no": int(item.get("page_no") or idx),
+                            "title": str(item.get("title") or f"第 {idx} 页").strip(),
+                            "summary": str(item.get("summary") or "").strip(),
+                            "bullets": bullets[:4],
+                        }
+                    )
+                if cleaned:
+                    return cleaned
+        except (OpenAIError, json.JSONDecodeError, TypeError, ValueError):
+            pass
+        return self._fallback_page_briefs(project, spec)
+
+    def _fallback_page_briefs(
+        self,
+        project: ProjectRecord,
+        spec: dict[str, object],
+    ) -> list[dict[str, object]]:
+        sections = [str(v).strip() for v in (spec.get("outline_sections") or []) if str(v).strip()]
+        if not sections:
+            sections = ["项目概览", "背景与目标", "核心信息框架", "方案与亮点", "风险与下一步"]
+        target_count = max(project.requested_page_min, min(project.requested_page_max, len(sections)))
+        briefs: list[dict[str, object]] = []
+        for idx, section in enumerate(sections[:target_count], start=1):
+            briefs.append(
+                {
+                    "page_no": idx,
+                    "title": section,
+                    "summary": f"围绕“{section}”提炼这一页的核心结论与表达重点。",
+                    "bullets": [
+                        f"说明 {section} 的关键背景或当前判断。",
+                        f"提炼与 {section} 直接相关的 2-3 个重点信息。",
+                        "给出这一页希望让观众记住的结论。",
+                    ],
+                }
+            )
+        return briefs
+
+    def _resolve_outline_markdown(self, project_root: Path) -> str | None:
+        try:
+            confirmation = self._read_confirmation_record(project_root)
+        except FileNotFoundError:
+            return None
+        spec = confirmation.approved_spec or confirmation.suggested_spec
+        outline_markdown = spec.get("outline_markdown") if isinstance(spec, dict) else None
+        if isinstance(outline_markdown, str) and outline_markdown.strip():
+            return outline_markdown
+        return None
+
+    def _extract_outline_sections(self, lines: list[str]) -> list[str]:
+        sections: list[str] = []
+        for raw_line in lines:
+            line = raw_line.strip()
+            if line.startswith("## "):
+                sections.append(line[3:].strip())
+        return sections
 
     def export_fallback_pptx_artifact(self, project_id: str, job_id: str) -> ArtifactRecord:
         now = datetime.now(timezone.utc)
@@ -1139,7 +1640,7 @@ class WorkspaceManager:
         if status is ProjectStatus.UPLOADING:
             return [NextAction.UPLOAD_SOURCE, NextAction.FINALIZE_UPLOADS, NextAction.START_GENERATION]
         if status is ProjectStatus.AWAITING_CONFIRMATION:
-            return [NextAction.START_GENERATION]
+            return [NextAction.AWAIT_CONFIRMATION]
         if status is ProjectStatus.READY_TO_GENERATE:
             return [NextAction.START_GENERATION]
         if status is ProjectStatus.COMPLETED:

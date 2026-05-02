@@ -26,7 +26,7 @@ const PROJECT_STATUS = {
   created:               { text: '已创建',   cls: 'badge',      step: 1 },
   uploading:             { text: '上传中',   cls: 'badge',      step: 1 },
   normalizing:           { text: '解析中',   cls: 'badge-warn', step: 1 },
-  awaiting_confirmation: { text: '可生成',   cls: 'badge-warn', step: 3 },
+  awaiting_confirmation: { text: '待确认',   cls: 'badge-warn', step: 2 },
   ready_to_generate:     { text: '待生成',   cls: 'badge-warn', step: 3 },
   generating:            { text: '生成中',   cls: 'badge-warn', step: 3 },
   post_processing:       { text: '后处理中', cls: 'badge-warn', step: 3 },

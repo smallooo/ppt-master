@@ -12,6 +12,9 @@ Page({
     sources: [],
     confirmation: null,
     confirmationSpecText: '',
+    outlineDraft: '',
+    pageBriefs: [],
+    originalPageBriefs: [],
     specEntries: [],
     job: null,
     events: [],
@@ -55,13 +58,17 @@ Page({
     const s = project.status;
     if (s === 'created' || s === 'uploading') {
       if (this.data.sources.length === 0) {
-        return { key: 'generate', label: '🚀 直接生成 PPT' };
+        return { key: 'finalize', label: '📝 生成默认提纲' };
       }
       return { key: 'finalize', label: '完成上传，进入解析' };
     }
     if (s === 'normalizing') return { key: 'wait', label: '解析中…', disabled: true };
     if (s === 'awaiting_confirmation') {
-      return { key: 'generate', label: '🚀 开始生成 PPT' };
+      const phase = confirmation && confirmation.suggested_spec && confirmation.suggested_spec.confirmation_phase;
+      if (phase === 'page_briefs') {
+        return { key: 'approvePageBriefs', label: '✅ 确认每页内容' };
+      }
+      return { key: 'approveOutline', label: '✅ 确认提纲' };
     }
     if (s === 'ready_to_generate') {
       return { key: 'generate', label: '🚀 开始生成 PPT' };
@@ -120,10 +127,14 @@ Page({
   async _refreshConfirmation() {
     try {
       const c = fmt.decorateConfirmation(await api.getConfirmation(this.data.pid));
+      const pageBriefs = (c.suggested_spec && c.suggested_spec.page_briefs) || [];
       this.setData({
         confirmation: c,
         specEntries: fmt.specEntries(c.suggested_spec || {}),
-        confirmationSpecText: JSON.stringify(c.suggested_spec || {}, null, 2)
+        confirmationSpecText: JSON.stringify(c.suggested_spec || {}, null, 2),
+        outlineDraft: (c.suggested_spec && c.suggested_spec.outline_markdown) || '',
+        pageBriefs: pageBriefs,
+        originalPageBriefs: JSON.parse(JSON.stringify(pageBriefs))
       });
     } catch (_e) {
       // 项目早期阶段可能 404
@@ -172,6 +183,8 @@ Page({
     if (!a || a.disabled) return;
     if (wx.vibrateShort) wx.vibrateShort({ type: 'light' });
     if (a.key === 'finalize') return this.onFinalize();
+    if (a.key === 'approveOutline') return this.onApproveOutline();
+    if (a.key === 'approvePageBriefs') return this.onApprovePageBriefs();
     if (a.key === 'generate') return this.onGenerate();
     if (a.key === 'cancel')   return this.onCancelJob();
     if (a.key === 'download') return this.onDownloadPptx();
@@ -279,6 +292,159 @@ Page({
     } catch (e) {
       wx.hideLoading();
       wx.showToast({ title: e.message || '解析失败', icon: 'none' });
+    }
+  },
+
+  onOutlineInput(e) {
+    this.setData({ outlineDraft: e.detail.value });
+  },
+
+  _normalizePageBriefs(pageBriefs) {
+    return (pageBriefs || []).map((brief, index) => Object.assign({}, brief, {
+      page_no: index + 1,
+      title: brief && brief.title ? brief.title : `第 ${index + 1} 页`,
+      summary: brief && brief.summary ? brief.summary : '',
+      bullets: Array.isArray(brief && brief.bullets) ? brief.bullets : [],
+      bulletsText: Array.isArray(brief && brief.bullets)
+        ? brief.bullets.map(item => String(item || '')).join('\n')
+        : ''
+    }));
+  },
+
+  _updatePageBrief(index, patch) {
+    const pageBriefs = this._normalizePageBriefs((this.data.pageBriefs || []).slice());
+    const current = Object.assign({}, pageBriefs[index] || {});
+    pageBriefs[index] = Object.assign(current, patch);
+    this.setData({ pageBriefs: pageBriefs });
+  },
+
+  onAddPageBrief() {
+    const pageBriefs = this._normalizePageBriefs((this.data.pageBriefs || []).slice());
+    pageBriefs.push({
+      page_no: pageBriefs.length + 1,
+      title: `第 ${pageBriefs.length + 1} 页`,
+      summary: '',
+      bullets: []
+    });
+    this.setData({ pageBriefs: pageBriefs });
+  },
+
+  onDeletePageBrief(e) {
+    const index = Number(e.currentTarget.dataset.index);
+    const pageBriefs = this._normalizePageBriefs((this.data.pageBriefs || []).slice());
+    if (pageBriefs.length <= 1) {
+      return wx.showToast({ title: '至少保留一页', icon: 'none' });
+    }
+    pageBriefs.splice(index, 1);
+    this.setData({ pageBriefs: this._normalizePageBriefs(pageBriefs) });
+  },
+
+  onMovePageBriefUp(e) {
+    const index = Number(e.currentTarget.dataset.index);
+    if (index <= 0) return;
+    const pageBriefs = this._normalizePageBriefs((this.data.pageBriefs || []).slice());
+    const temp = pageBriefs[index - 1];
+    pageBriefs[index - 1] = pageBriefs[index];
+    pageBriefs[index] = temp;
+    this.setData({ pageBriefs: this._normalizePageBriefs(pageBriefs) });
+  },
+
+  onMovePageBriefDown(e) {
+    const index = Number(e.currentTarget.dataset.index);
+    const pageBriefs = this._normalizePageBriefs((this.data.pageBriefs || []).slice());
+    if (index >= pageBriefs.length - 1) return;
+    const temp = pageBriefs[index + 1];
+    pageBriefs[index + 1] = pageBriefs[index];
+    pageBriefs[index] = temp;
+    this.setData({ pageBriefs: this._normalizePageBriefs(pageBriefs) });
+  },
+
+  async onRestorePageBriefs() {
+    const original = this.data.originalPageBriefs || [];
+    if (!original.length) {
+      return wx.showToast({ title: '没有可恢复的版本', icon: 'none' });
+    }
+    const ok = await new Promise(r => wx.showModal({
+      title: '恢复系统版本',
+      content: '将用系统生成的每页简要内容覆盖当前编辑结果，确定继续？',
+      success: res => r(res.confirm),
+      fail: () => r(false)
+    }));
+    if (!ok) return;
+    this.setData({
+      pageBriefs: this._normalizePageBriefs(JSON.parse(JSON.stringify(original)))
+    });
+  },
+
+  onPageBriefTitleInput(e) {
+    const index = Number(e.currentTarget.dataset.index);
+    this._updatePageBrief(index, { title: e.detail.value });
+  },
+
+  onPageBriefSummaryInput(e) {
+    const index = Number(e.currentTarget.dataset.index);
+    this._updatePageBrief(index, { summary: e.detail.value });
+  },
+
+  onPageBriefBulletsInput(e) {
+    const index = Number(e.currentTarget.dataset.index);
+    const bullets = (e.detail.value || '')
+      .split('\n')
+      .map(item => item.trim())
+      .filter(Boolean);
+    this._updatePageBrief(index, { bullets: bullets });
+  },
+
+  async onApproveOutline() {
+    const confirmation = this.data.confirmation;
+    if (!confirmation) return;
+    const outlineDraft = (this.data.outlineDraft || '').trim();
+    if (!outlineDraft) {
+      return wx.showToast({ title: '请先填写提纲内容', icon: 'none' });
+    }
+    try {
+      wx.showLoading({ title: '提交确认中', mask: true });
+      await api.approveConfirmation(this.data.pid, {
+        approved_by: 'user',
+        updated_spec: Object.assign({}, confirmation.suggested_spec || {}, {
+          outline_markdown: outlineDraft
+        })
+      });
+      wx.hideLoading();
+      wx.showToast({ title: '提纲已确认', icon: 'success' });
+      this.refreshAll();
+    } catch (e) {
+      wx.hideLoading();
+      wx.showToast({ title: e.message || '确认失败', icon: 'none' });
+    }
+  },
+
+  async onApprovePageBriefs() {
+    const confirmation = this.data.confirmation;
+    if (!confirmation) return;
+    const pageBriefs = this._normalizePageBriefs(this.data.pageBriefs || []).map((brief, index) => ({
+      page_no: brief.page_no || index + 1,
+      title: (brief.title || '').trim() || `第 ${index + 1} 页`,
+      summary: (brief.summary || '').trim(),
+      bullets: Array.isArray(brief.bullets) ? brief.bullets.map(item => String(item).trim()).filter(Boolean) : []
+    }));
+    if (!pageBriefs.length) {
+      return wx.showToast({ title: '请先确认每页内容', icon: 'none' });
+    }
+    try {
+      wx.showLoading({ title: '确认中', mask: true });
+      await api.approveConfirmation(this.data.pid, {
+        approved_by: 'user',
+        updated_spec: Object.assign({}, confirmation.suggested_spec || {}, {
+          page_briefs: pageBriefs
+        })
+      });
+      wx.hideLoading();
+      wx.showToast({ title: '已可开始生成', icon: 'success' });
+      this.refreshAll();
+    } catch (e) {
+      wx.hideLoading();
+      wx.showToast({ title: e.message || '确认失败', icon: 'none' });
     }
   },
 

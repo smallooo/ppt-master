@@ -59,6 +59,7 @@ class ConfirmationSummary(BaseModel):
 class ApproveConfirmationRequest(BaseModel):
     approved_by: str = Field(min_length=1, max_length=120)
     revision_note: str | None = Field(default=None, max_length=2000)
+    updated_spec: dict[str, object] | None = None
 
 
 class ApproveConfirmationResponse(BaseModel):

@@ -11,6 +11,7 @@ from service.config import ServiceSettings, get_settings
 from service.schemas.common import ResponseEnvelope
 from service.schemas.projects import (
     ApproveConfirmationRequest,
+    ApproveConfirmationResponse,
     ArtifactSummary,
     CancelJobResponse,
     ConfirmationSummary,
@@ -311,6 +312,27 @@ def get_confirmation_for_user(
         )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post(
+    "/{project_id}/confirmation/approve",
+    response_model=ResponseEnvelope[ApproveConfirmationResponse],
+)
+def approve_confirmation_for_user(
+    project_id: str,
+    request: ApproveConfirmationRequest,
+    user: UserRecord = Depends(get_current_user),
+) -> ResponseEnvelope[ApproveConfirmationResponse]:
+    _ensure_owner(project_id, user)
+    payload = request.model_copy(update={"approved_by": user.nickname or user.id})
+    try:
+        return ResponseEnvelope(
+            data=workspace_manager().approve_confirmation(project_id, payload)
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.get(
